@@ -3,6 +3,8 @@
 
 extern crate redis;
 
+mod dlm;
+
 #[cfg(test)]
 mod test {
     #[test]
