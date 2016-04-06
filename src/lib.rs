@@ -3,7 +3,10 @@
 
 extern crate redis;
 
-mod dlm;
+// public api
+pub use redlock::Redlock;
+
+mod redlock;
 
 #[cfg(test)]
 mod test {
