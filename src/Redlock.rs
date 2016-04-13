@@ -62,5 +62,11 @@ impl Redlock {
     pub fn unlock(lock: Lock) -> RedlockResult<()> {
         unimplemented!()
     }
+}
 
+impl Lock {
+    /// instantialize a Lock with validity, resource name, and key
+    pub fn new(validity: i32, res: String, key: String) -> Self {
+        Lock { validity: validity, resource: res, key: key }
+    }
 }
