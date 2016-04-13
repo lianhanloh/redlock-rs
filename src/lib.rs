@@ -3,10 +3,13 @@
 
 extern crate redis;
 
+//TODO: check out docopt -> command line argument parser plugin
+
 // public api
 pub use redlock::Redlock;
 
 mod redlock;
+mod types;
 
 #[cfg(test)]
 mod test {

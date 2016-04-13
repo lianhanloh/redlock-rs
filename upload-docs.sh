@@ -1,4 +1,4 @@
-Make a new repo for the gh-pages branch
+# Make a new repo for the gh-pages branch
 rm -rf .gh-pages
 mkdir .gh-pages
 cd .gh-pages
@@ -22,4 +22,3 @@ git push -qf origin gh-pages
 # Cleanup
 cd ..
 rm -rf .gh-pages
-
