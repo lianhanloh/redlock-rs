@@ -5,7 +5,7 @@ This Rust crate implements the Redis-based distributed lock manager algorithm [d
 
 Documentation on the library can be found at https://lianhanloh.github.io/redlock-rs.
 
-To create a lock manager:
+To create a lock manager and acquire lock:
 
 ```rust
 extern crate redlock;
