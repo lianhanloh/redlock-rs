@@ -2,9 +2,10 @@
 //! as the necessary functions lock() and unlock(). It also declares the struct Lock which 
 //! is used to hold necessary information about each lock a client acquires. 
 
-use redis::{Client, Connection};
+use redis::{Client, Connection, RedisResult, FromRedisValue};
 use types::{RedlockResult, Error};
 use time::precise_time_s;
+use redis::commands::Commands;
 
 /// Distributed Lock Manager class object
 pub struct Redlock {
@@ -76,7 +77,11 @@ impl Redlock {
     /// acquire lock from one server
     fn lock_instance(&self, server : &Connection, res_name : &str, val : &str, 
                      ttl: i32) -> RedlockResult<()> {
-        Ok(())
+        if server.set_nx(res_name.to_string(), val.to_string()).is_ok() {
+            Ok(())
+        } else {
+            Err(Error::MultipleRedlock)
+        }
     }
 
     /// release lock from one server
@@ -92,21 +97,25 @@ impl Redlock {
         while retry < self.retry_count {
             let mut n = 0;
             let start_time : i32 = (precise_time_s() * 1000.0) as i32;
+            /*
             for server in self.servers {
                 let res = self.lock_instance(server, &res_name, &val, ttl);
                 if res.is_ok() {
                     n = n + 1;
                 }
             }
+            */
             let elapsed_time : i32 = ((precise_time_s() * 1000.0) as i32) - start_time;
             let validity = ttl - elapsed_time - drift;
             if validity > 0 && n >= self.quorum {
                 // lock successful!
                 return Ok(Lock::new(validity, res_name, val));
             }  else {
+                /*
                 for server in self.servers {
                     self.unlock_instance(server, &res_name, &val); 
                 }
+                */
                 retry = retry + 1;
                 //TODO: sleep for retry_delay
             }
@@ -115,12 +124,14 @@ impl Redlock {
     }
     /// unlocks resource held by Lock
     pub fn unlock(lock: Lock) -> RedlockResult<()> {
+        /*
         for server in self.servers {
             let res = self.unlock_instance(server, lock.resource, lock.key);
             if res.is_err() {
                 Err(Error::MultipleRedlock)
             }
         }
+        */
         Ok(())
     }
 }
