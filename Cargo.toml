@@ -5,3 +5,4 @@ authors = ["Lianhan Loh <loh.lianhan@gmail.com>"]
 
 [dependencies]
 redis = "*"
+time = "0.1"

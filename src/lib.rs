@@ -2,6 +2,7 @@
 //! Redis nodes. 
 
 extern crate redis;
+extern crate time;
 
 //TODO: check out docopt -> command line argument parser plugin
 

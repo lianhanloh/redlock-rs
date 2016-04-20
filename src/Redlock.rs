@@ -1,6 +1,10 @@
+//! This mod specifies and implements the Distributed Lock Manager Redlock object, as well 
+//! as the necessary functions lock() and unlock(). It also declares the struct Lock which 
+//! is used to hold necessary information about each lock a client acquires. 
+
 use redis::{Client, Connection};
 use types::{RedlockResult, Error};
-
+use time::precise_time_s;
 
 /// Distributed Lock Manager class object
 pub struct Redlock {
@@ -10,6 +14,10 @@ pub struct Redlock {
     retry_count: i32,
     /// time delay between each retry
     retry_delay: f32,
+    /// number of locks needed
+    quorum: i32,
+    /// clock drift factor
+    clock_drift_factor: f32,
 }
 
 /// Represents the Lock a client holds 
@@ -29,16 +37,21 @@ impl Redlock {
     pub fn dlm(urls : Vec<String>, retry_count: Option<i32>, retry_delay: Option<f32>)
         -> RedlockResult<Redlock> {
         let mut servers = Vec::new();
+        let quorum = urls.len() as i32;
+        let mut num_errors = 0;
         for u in urls {
             let client_res = Client::open(&*u);
             if client_res.is_err() {
-                return Err(Error::MultipleRedlock);
+                num_errors += 1;
             }
             let con_res = client_res.unwrap().get_connection();
             if con_res.is_err() {
-                return Err(Error::MultipleRedlock);
+                num_errors += 1;
             }
             servers.push(con_res.unwrap());
+        }
+        if (servers.len() as i32) < quorum {
+            return Err(Error::NotEnoughMasters);
         }
         let rc = match retry_count {
             Some(x) => x,
@@ -48,15 +61,40 @@ impl Redlock {
             Some(x) => x,
             None => 0.2,
         };
+        let cdf = 0.01;
         Ok(Redlock { 
             servers: servers, 
             retry_count: rc, 
             retry_delay: rd,
+            quorum: quorum,
+            clock_drift_factor: cdf,
         })
     }
-    /// locks resource specified by res_name for time in miliseconds
-    pub fn lock(res_name: String, time: i32) -> RedlockResult<Lock> {
+
+    /// generates unique id for lock key
+    fn get_unique_id(&self) -> String {
         unimplemented!()
+    }
+
+    fn lock_instance(&self, server : &Connection, res_name : &str, val : &str, 
+                     ttl: i32) -> RedlockResult<()> {
+        Ok(())
+    }
+
+    /// locks resource specified by res_name for ttl in miliseconds
+    pub fn lock(&self, res_name: String, ttl: i32) -> RedlockResult<Lock> {
+        let retry = 0;
+        let val = self.get_unique_id();
+        let drift : i32 = (((ttl as f32) * self.clock_drift_factor) as i32) + 2;
+        while retry < self.retry_count {
+            let mut n = 0;
+            let start_time : i32 = (precise_time_s() * 1000.0) as i32;
+            for ref mut server in self.servers {
+                let res = self.lock_instance(server, &res_name, &val, ttl);
+            }
+            
+        }
+        Err(Error::CannotObtainLock)
     }
     /// unlocks resource held by Lock
     pub fn unlock(lock: Lock) -> RedlockResult<()> {

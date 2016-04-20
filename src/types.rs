@@ -7,6 +7,8 @@ pub enum Error {
     CannotObtainLock,
     /// Error communicating with 1 or more Redis masters
     MultipleRedlock,
+    /// Failed to connect to enough Redis masters
+    NotEnoughMasters,
 }
 
 pub type RedlockResult<T> = result::Result<T, Error>;
