@@ -38,17 +38,14 @@ impl Redlock {
         -> RedlockResult<Redlock> {
         let mut servers = Vec::new();
         let quorum = urls.len() as i32;
-        let mut num_errors = 0;
         for u in urls {
             let client_res = Client::open(&*u);
-            if client_res.is_err() {
-                num_errors += 1;
+            if client_res.is_ok() {
+                let con_res = client_res.unwrap().get_connection();
+                if con_res.is_ok() {
+                    servers.push(con_res.unwrap());
+                }
             }
-            let con_res = client_res.unwrap().get_connection();
-            if con_res.is_err() {
-                num_errors += 1;
-            }
-            servers.push(con_res.unwrap());
         }
         if (servers.len() as i32) < quorum {
             return Err(Error::NotEnoughMasters);
@@ -76,29 +73,55 @@ impl Redlock {
         unimplemented!()
     }
 
+    /// acquire lock from one server
     fn lock_instance(&self, server : &Connection, res_name : &str, val : &str, 
                      ttl: i32) -> RedlockResult<()> {
         Ok(())
     }
 
+    /// release lock from one server
+    fn unlock_instance(&self, server : Connection, res_name : &str, 
+                       val : &str) -> () {
+    }
+
     /// locks resource specified by res_name for ttl in miliseconds
     pub fn lock(&self, res_name: String, ttl: i32) -> RedlockResult<Lock> {
-        let retry = 0;
+        let mut retry = 0;
         let val = self.get_unique_id();
         let drift : i32 = (((ttl as f32) * self.clock_drift_factor) as i32) + 2;
         while retry < self.retry_count {
             let mut n = 0;
             let start_time : i32 = (precise_time_s() * 1000.0) as i32;
-            for ref mut server in self.servers {
+            for server in self.servers {
                 let res = self.lock_instance(server, &res_name, &val, ttl);
+                if res.is_ok() {
+                    n = n + 1;
+                }
             }
-            
+            let elapsed_time : i32 = ((precise_time_s() * 1000.0) as i32) - start_time;
+            let validity = ttl - elapsed_time - drift;
+            if validity > 0 && n >= self.quorum {
+                // lock successful!
+                return Ok(Lock::new(validity, res_name, val));
+            }  else {
+                for server in self.servers {
+                    self.unlock_instance(server, &res_name, &val); 
+                }
+                retry = retry + 1;
+                //TODO: sleep for retry_delay
+            }
         }
         Err(Error::CannotObtainLock)
     }
     /// unlocks resource held by Lock
     pub fn unlock(lock: Lock) -> RedlockResult<()> {
-        unimplemented!()
+        for server in self.servers {
+            let res = self.unlock_instance(server, lock.resource, lock.key);
+            if res.is_err() {
+                Err(Error::MultipleRedlock)
+            }
+        }
+        Ok(())
     }
 }
 
