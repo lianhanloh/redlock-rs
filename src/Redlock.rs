@@ -80,49 +80,62 @@ impl Redlock {
         if res.is_ok() {
             let res : RedisResult<String> = server.set_ex(res_name.to_string(),
             val.to_string(), ttl as usize);
+            //TODO: map error
             if res.is_ok() {
                 Ok(())
             } else {
-                Err(Error::MultipleRedlock)
+                Err(Error::RedlockConn)
             }
         } else {
-            Err(Error::MultipleRedlock)
+            Err(Error::RedlockConn)
         }
     }
 
     /// release lock from one server
     fn unlock_instance(&self, server : Connection, res_name : &str, 
-                       val : &str) -> () {
+                       val : &str) -> RedlockResult<()> {
         let res : RedisResult<String> = server.get(res_name.to_string());
         if res.is_ok() {
             let v = res.unwrap();
             if val.to_string() == v {
                 let res : RedisResult<String> = server.del(res_name.to_string());
+                //TODO: map error?
                 if res.is_ok() {
                     Ok(())
                 } else {
                     //TODO: retry?
-                    Err(Error::MultipleRedlock)
+                    Err(Error::RedlockConn)
                 }
+            } else {
+                Err(Error::InvalidLock)
             }
         } else {
-            //TODO: error or return some sort of lock wasn't acquired?
-            Err(Error::MultipleRedlock)
+            Err(Error::RedlockConn)
         }
     }
 
     /// locks resource specified by res_name for ttl in miliseconds
-    pub fn lock(&self, res_name: String, ttl: i32) -> RedlockResult<Lock> {
+    pub fn lock(&mut self, res_name: String, ttl: i32) -> RedlockResult<Lock> {
         let mut retry = 0;
         let val = self.get_unique_id();
         let drift : i32 = (((ttl as f32) * self.clock_drift_factor) as i32) + 2;
         while retry < self.retry_count {
             let mut n = 0;
             let start_time : i32 = (precise_time_s() * 1000.0) as i32;
-            for server in self.servers {
-                let res = self.lock_instance(server, &res_name, &val, ttl);
+            for ref mut server in &mut self.servers {
+                let res : RedisResult<String> = server.set_nx(res_name.to_string(), 
+                                                              val.to_string());
                 if res.is_ok() {
-                    n = n + 1;
+                    let res : RedisResult<String> = server.set_ex(res_name.to_string(),
+                                                                  val.to_string(), 
+                                                                  ttl as usize);
+                    if res.is_ok() {
+                        n = n + 1;
+                    } else {
+                        return Err(Error::RedlockConn);
+                    }
+                } else {
+                    return Err(Error::RedlockConn);
                 }
             }
             let elapsed_time : i32 = ((precise_time_s() * 1000.0) as i32) - start_time;
@@ -131,9 +144,11 @@ impl Redlock {
                 // lock successful!
                 return Ok(Lock::new(validity, res_name, val));
             }  else {
+                /*
                 for server in self.servers {
                     self.unlock_instance(server, &res_name, &val); 
                 }
+                */
                 retry = retry + 1;
                 //TODO: sleep for retry_delay
             }
@@ -142,12 +157,14 @@ impl Redlock {
     }
     /// unlocks resource held by Lock
     pub fn unlock(lock: Lock) -> RedlockResult<()> {
+        /*
         for server in self.servers {
             let res = self.unlock_instance(server, lock.resource, lock.key);
             if res.is_err() {
-                Err(Error::MultipleRedlock)
+                Err(Error::RedlockConn)
             }
         }
+        */
         Ok(())
     }
 }
