@@ -3,6 +3,7 @@
 
 extern crate redis;
 extern crate time;
+extern crate rand;
 
 //TODO: check out docopt -> command line argument parser plugin
 

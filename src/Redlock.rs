@@ -5,6 +5,9 @@
 use redis::{Client, Connection, RedisResult, Commands};
 use types::{RedlockResult, Error};
 use time::precise_time_s;
+use std::time::Duration;
+use std::thread::sleep;
+use rand::thread_rng;
 
 /// Distributed Lock Manager class object
 pub struct Redlock {
@@ -70,51 +73,10 @@ impl Redlock {
 
     /// generates unique id for lock key
     fn get_unique_id(&self) -> String {
-        unimplemented!()
+        "1234567".to_string();
     }
 
-    /// acquire lock from one server
-    fn lock_instance(&self, server : &Connection, res_name : &str, val : &str, 
-                     ttl: i32) -> RedlockResult<()> {
-        let res : RedisResult<String> = server.set_nx(res_name.to_string(), val.to_string());
-        if res.is_ok() {
-            let res : RedisResult<String> = server.set_ex(res_name.to_string(),
-            val.to_string(), ttl as usize);
-            //TODO: map error
-            if res.is_ok() {
-                Ok(())
-            } else {
-                Err(Error::RedlockConn)
-            }
-        } else {
-            Err(Error::RedlockConn)
-        }
-    }
-
-    /// release lock from one server
-    fn unlock_instance(&self, server : Connection, res_name : &str, 
-                       val : &str) -> RedlockResult<()> {
-        let res : RedisResult<String> = server.get(res_name.to_string());
-        if res.is_ok() {
-            let v = res.unwrap();
-            if val.to_string() == v {
-                let res : RedisResult<String> = server.del(res_name.to_string());
-                //TODO: map error?
-                if res.is_ok() {
-                    Ok(())
-                } else {
-                    //TODO: retry?
-                    Err(Error::RedlockConn)
-                }
-            } else {
-                Err(Error::InvalidLock)
-            }
-        } else {
-            Err(Error::RedlockConn)
-        }
-    }
-
-    /// locks resource specified by res_name for ttl in miliseconds
+   /// locks resource specified by res_name for ttl in miliseconds
     pub fn lock(&mut self, res_name: String, ttl: i32) -> RedlockResult<Lock> {
         let mut retry = 0;
         let val = self.get_unique_id();
@@ -122,20 +84,10 @@ impl Redlock {
         while retry < self.retry_count {
             let mut n = 0;
             let start_time : i32 = (precise_time_s() * 1000.0) as i32;
-            for ref mut server in &mut self.servers {
-                let res : RedisResult<String> = server.set_nx(res_name.to_string(), 
-                                                              val.to_string());
+            for server in &mut self.servers {
+                let res = lock_instance(server, &res_name, &val, ttl);
                 if res.is_ok() {
-                    let res : RedisResult<String> = server.set_ex(res_name.to_string(),
-                                                                  val.to_string(), 
-                                                                  ttl as usize);
-                    if res.is_ok() {
-                        n = n + 1;
-                    } else {
-                        return Err(Error::RedlockConn);
-                    }
-                } else {
-                    return Err(Error::RedlockConn);
+                    n = n + 1;
                 }
             }
             let elapsed_time : i32 = ((precise_time_s() * 1000.0) as i32) - start_time;
@@ -144,27 +96,27 @@ impl Redlock {
                 // lock successful!
                 return Ok(Lock::new(validity, res_name, val));
             }  else {
-                /*
-                for server in self.servers {
-                    self.unlock_instance(server, &res_name, &val); 
+                for server in &mut self.servers {
+                    let res = unlock_instance(server, &res_name, &val); 
+                    if res.is_err() { 
+                        return Err(Error::RedlockConn);
+                    }
                 }
-                */
                 retry = retry + 1;
-                //TODO: sleep for retry_delay
+                // sleep for retry_delay
+                sleep(Duration::from_millis((self.retry_delay as u64) * 1000));
             }
         }
         Err(Error::CannotObtainLock)
     }
     /// unlocks resource held by Lock
-    pub fn unlock(lock: Lock) -> RedlockResult<()> {
-        /*
-        for server in self.servers {
-            let res = self.unlock_instance(server, lock.resource, lock.key);
+    pub fn unlock(&mut self, lock: Lock) -> RedlockResult<()> {
+        for server in &mut self.servers {
+            let res = unlock_instance(server, &lock.resource, &lock.key);
             if res.is_err() {
-                Err(Error::RedlockConn)
+                return Err(Error::RedlockConn);
             }
         }
-        */
         Ok(())
     }
 }
@@ -175,3 +127,44 @@ impl Lock {
         Lock { validity: validity, resource: res, key: key }
     }
 }
+
+/// release lock from one server
+fn unlock_instance(server : &Connection, res_name : &str, 
+                   val : &str) -> RedlockResult<()> {
+    let res : RedisResult<String> = server.get(res_name.to_string());
+    if res.is_ok() {
+        let v = res.unwrap();
+        if val.to_string() == v {
+            let res : RedisResult<String> = server.del(res_name.to_string());
+            if res.is_ok() {
+                Ok(())
+            } else {
+                //TODO: retry?
+                Err(Error::RedlockConn)
+            }
+        } else {
+            Err(Error::InvalidLock)
+        }
+    } else {
+        Err(Error::RedlockConn)
+    }
+}
+
+/// acquire lock from one server
+fn lock_instance(server : &Connection, res_name : &str, val : &str, 
+                 ttl: i32) -> RedlockResult<()> {
+    let res : RedisResult<String> = server.set_nx(res_name.to_string(), val.to_string());
+    if res.is_ok() {
+        let res : RedisResult<String> = server.set_ex(res_name.to_string(),
+        val.to_string(), ttl as usize);
+        if res.is_ok() {
+            Ok(())
+        } else {
+            Err(Error::RedlockConn)
+        }
+    } else {
+        Err(Error::RedlockConn)
+    }
+}
+
+
