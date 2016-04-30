@@ -212,6 +212,16 @@ mod test{
         assert!(my_lock.is_ok());
     }
 
+    #[test] 
+    pub fn multi_server_speclab_test() {
+        let urls = vec!["redis://127.0.0.1"to_string(), 
+                        "redis://spec02.seas.upenn.edu".to_string(),
+                        "redis://spec10.seas.upenn.edu".to_string()];
+        let mut dlm = Redlock::dlm(urls, None, None).unwrap();
+        let my_lock = dlm.lock("multi_server_res".to_string(), 5000);
+        assert!(my_lock.is_ok());
+    }
+
     /*
     #[test]
     pub fn missing_server() {
