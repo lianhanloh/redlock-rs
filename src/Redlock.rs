@@ -2,12 +2,12 @@
 //! as the necessary functions lock() and unlock(). It also declares the struct Lock which 
 //! is used to hold necessary information about each lock a client acquires. 
 
-use redis::{Client, Connection, RedisResult, Commands};
+use redis::{Client, Connection, RedisResult, cmd, Value};
 use types::{RedlockResult, Error};
 use time::precise_time_s;
 use std::time::Duration;
 use std::thread::sleep;
-use rand::thread_rng;
+use rand::{thread_rng, Rng};
 
 /// Distributed Lock Manager class object
 pub struct Redlock {
@@ -31,6 +31,8 @@ pub struct Lock {
     resource: String,
     /// a random value which is used to safely reclaim the lock.
     key: String,
+    /// start time in seconds returned by Rust's `precise_time_s()` from which `validity` runs from
+    start_time: f64,
 }
 
 impl Redlock {
@@ -47,6 +49,7 @@ impl Redlock {
                 let con_res = client_res.unwrap().get_connection();
                 if con_res.is_ok() {
                     servers.push(con_res.unwrap());
+                    println!("added server");
                 }
             }
         }
@@ -60,6 +63,7 @@ impl Redlock {
         let rd = match retry_delay {
             Some(x) => x,
             None => 0.2,
+
         };
         let cdf = 0.01;
         Ok(Redlock { 
@@ -73,7 +77,8 @@ impl Redlock {
 
     /// generates unique id for lock key
     fn get_unique_id(&self) -> String {
-        "1234567".to_string();
+        let id_len = 22;
+        thread_rng().gen_ascii_chars().take(id_len).collect()
     }
 
    /// locks resource specified by res_name for ttl in miliseconds
@@ -92,9 +97,10 @@ impl Redlock {
             }
             let elapsed_time : i32 = ((precise_time_s() * 1000.0) as i32) - start_time;
             let validity = ttl - elapsed_time - drift;
+            let start_time = precise_time_s();
             if validity > 0 && n >= self.quorum {
                 // lock successful!
-                return Ok(Lock::new(validity, res_name, val));
+                return Ok(Lock::new(validity, res_name, val, start_time));
             }  else {
                 for server in &mut self.servers {
                     let res = unlock_instance(server, &res_name, &val); 
@@ -123,48 +129,93 @@ impl Redlock {
 
 impl Lock {
     /// instantialize a Lock with validity, resource name, and key
-    pub fn new(validity: i32, res: String, key: String) -> Self {
-        Lock { validity: validity, resource: res, key: key }
+    pub fn new(validity: i32, res: String, key: String, start_time: f64) -> Self {
+        Lock { validity: validity, resource: res, key: key, start_time: start_time, }
+    }
+
+    /// checks if lock is still valid
+    pub fn still_valid(&self) -> bool {
+        (((precise_time_s() - self.start_time) * 1000.0) as i32) < self.validity
     }
 }
 
 /// release lock from one server
 fn unlock_instance(server : &Connection, res_name : &str, 
                    val : &str) -> RedlockResult<()> {
-    let res : RedisResult<String> = server.get(res_name.to_string());
-    if res.is_ok() {
-        let v = res.unwrap();
-        if val.to_string() == v {
-            let res : RedisResult<String> = server.del(res_name.to_string());
-            if res.is_ok() {
-                Ok(())
-            } else {
-                //TODO: retry?
-                Err(Error::RedlockConn)
-            }
-        } else {
-            Err(Error::InvalidLock)
-        }
-    } else {
-        Err(Error::RedlockConn)
+    let unlock_script = "if redis.call('get',KEYS[1]) == ARGV[1] then return redis.call('del',KEYS[1]) else return 0 end";
+    let res : RedisResult<i32> = cmd("EVAL").arg(unlock_script).arg(1).arg(res_name).arg(val)
+                                    .query(server);
+    match res {
+        Ok(1) => Ok(()),
+        Ok(0) => Err(Error::UnlockFailed),
+        _ => Err(Error::RedlockConn),
     }
 }
 
 /// acquire lock from one server
 fn lock_instance(server : &Connection, res_name : &str, val : &str, 
                  ttl: i32) -> RedlockResult<()> {
-    let res : RedisResult<String> = server.set_nx(res_name.to_string(), val.to_string());
-    if res.is_ok() {
-        let res : RedisResult<String> = server.set_ex(res_name.to_string(),
-        val.to_string(), ttl as usize);
-        if res.is_ok() {
-            Ok(())
-        } else {
-            Err(Error::RedlockConn)
-        }
-    } else {
-        Err(Error::RedlockConn)
+    let res : RedisResult<Value> = cmd("SET").arg(res_name).arg(val).arg("NX").arg("PX")
+                                    .arg(ttl).query(server);
+    match res {
+        Ok(Value::Okay) => Ok(()),
+        Ok(Value::Nil) => Err(Error::CannotObtainLock),
+        _ => Err(Error::RedlockConn),
     }
 }
 
+#[test]
+pub fn test_lock_instance() {
+    let client = Client::open("redis://127.0.0.1/").unwrap();
+    let con = client.get_connection().unwrap();
+    assert!(lock_instance(&con, "lock_test_res", "uni_val", 1000).is_ok());
+    assert!(lock_instance(&con, "lock_test_res", "uni_val", 1000).is_err());
+    sleep(Duration::from_secs(1));
+    assert!(lock_instance(&con, "lock_test_res", "uni_val", 10).is_ok());
+}
 
+#[test]
+pub fn test_unlock_instance() {
+    let client = Client::open("redis://127.0.0.1/").unwrap();
+    let con = client.get_connection().unwrap();
+    assert!(lock_instance(&con, "unlock_test_res", "uni_val", 30000).is_ok());
+    let res = unlock_instance(&con, "unlock_test_res", "uni_val");
+    assert!(res.is_ok());
+    assert_eq!(res, Ok(()));
+    let res = unlock_instance(&con, "unlock_test_res", "uni_val");
+    assert!(res.is_err());
+}
+
+
+#[cfg(test)]
+mod test{
+    use super::Redlock;
+    use redis;
+    use redis::{RedisResult, Value};
+
+    #[test]
+    pub fn redis_check() {
+        let client = redis::Client::open("redis://127.0.0.1/").unwrap();
+        let con = client.get_connection().unwrap();
+        let res : RedisResult<Value> = redis::cmd("SET").arg("res").arg("key").arg("NX").arg("PX").arg(3000).query(&con);
+        assert_eq!(res, Ok(Value::Okay));
+        assert_eq!(redis::cmd("GET").arg("res").query(&con), Ok("key".to_string()));
+        let res : RedisResult<Value> = redis::cmd("SET").arg("res").arg("key").arg("NX").arg("PX").arg(3000).query(&con);
+        assert_eq!(res, Ok(Value::Nil));
+    }
+
+
+    #[test]
+    pub fn single_server_lock() {
+        let mut dlm = Redlock::dlm(vec!["redis://127.0.0.1".to_string()], None, None).unwrap();
+        let my_lock = dlm.lock("my_resource_name".to_string(), 5000);
+        assert!(my_lock.is_ok());
+    }
+
+    /*
+    #[test]
+    pub fn missing_server() {
+        assert!(Redlock::dlm(vec!["redis://123.123.123.123".to_string()], None, None).is_err());
+    }*/
+
+}

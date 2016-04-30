@@ -11,6 +11,8 @@ pub enum Error {
     NotEnoughMasters,
     /// Lock wasn't valid (may have expired)
     InvalidLock,
+    /// Unlock instance failed
+    UnlockFailed,
 }
 
 pub type RedlockResult<T> = result::Result<T, Error>;

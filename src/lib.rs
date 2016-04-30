@@ -12,10 +12,3 @@ pub use redlock::Redlock;
 
 mod redlock;
 mod types;
-
-#[cfg(test)]
-mod test {
-    #[test]
-    fn it_works() {
-    }
-}

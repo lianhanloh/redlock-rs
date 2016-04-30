@@ -12,6 +12,6 @@ extern crate redlock;
 use redlock::Redlock;
 
   let dlm = Redlock::dlm(vec!["redis://127.0.0.1".to_string()], None, None).unwrap();
-  let my_lock = dlm.lock("my_resource_name", 1000);
+  let my_lock = dlm.lock("my_resource_name".to_string(), 1000);
 
 ```
