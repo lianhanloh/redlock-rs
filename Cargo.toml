@@ -4,6 +4,6 @@ version = "0.1.0"
 authors = ["Lianhan Loh <loh.lianhan@gmail.com>"]
 
 [dependencies]
-redis = "*"
+redis = "0.5.2"
 time = "0.1"
-rand = "*"
+rand = "0.3"

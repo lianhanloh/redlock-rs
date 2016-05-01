@@ -49,7 +49,6 @@ impl Redlock {
                 let con_res = client_res.unwrap().get_connection();
                 if con_res.is_ok() {
                     servers.push(con_res.unwrap());
-                    println!("added server");
                 }
             }
         }
@@ -204,28 +203,17 @@ mod test{
         assert_eq!(res, Ok(Value::Nil));
     }
 
-
     #[test]
     pub fn single_server_lock() {
         let mut dlm = Redlock::dlm(vec!["redis://127.0.0.1".to_string()], None, None).unwrap();
         let my_lock = dlm.lock("my_resource_name".to_string(), 5000);
         assert!(my_lock.is_ok());
+        let lock_should_fail = dlm.lock("my_resource_name".to_string(), 4000);
+        assert!(lock_should_fail.is_err());
     }
 
-    #[test] 
-    pub fn multi_server_speclab_test() {
-        let urls = vec!["redis://127.0.0.1"to_string(), 
-                        "redis://spec02.seas.upenn.edu".to_string(),
-                        "redis://spec10.seas.upenn.edu".to_string()];
-        let mut dlm = Redlock::dlm(urls, None, None).unwrap();
-        let my_lock = dlm.lock("multi_server_res".to_string(), 5000);
-        assert!(my_lock.is_ok());
-    }
-
-    /*
     #[test]
     pub fn missing_server() {
         assert!(Redlock::dlm(vec!["redis://123.123.123.123".to_string()], None, None).is_err());
-    }*/
-
+    }
 }
