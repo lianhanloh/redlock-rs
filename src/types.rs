@@ -1,4 +1,4 @@
-///! This mod specifies RedlockResult as an alias for Result and the various Error enum types
+//! This mod specifies RedlockResult as an alias for Result and the various Error enum types
 
 use std::result;
 
