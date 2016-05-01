@@ -7,8 +7,5 @@ extern crate rand;
 
 //TODO: check out docopt -> command line argument parser plugin
 
-// public api
-pub use redlock::Redlock;
-
-mod redlock;
-mod types;
+pub mod redlock;
+pub mod types;
