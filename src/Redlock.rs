@@ -212,8 +212,23 @@ mod test{
         assert!(lock_should_fail.is_err());
     }
 
+    /*
     #[test]
     pub fn missing_server() {
         assert!(Redlock::dlm(vec!["redis://123.123.123.123".to_string()], None, None).is_err());
+    }
+    */
+
+    #[test]
+    pub fn multi_server() {
+        let urls = vec!["redis://127.0.0.1:6378".to_string(),
+                        "redis://127.0.0.1:6379".to_string(),
+                        "redis://127.0.0.1:6111".to_string()];
+
+        let mut dlm = Redlock::dlm(urls, None, None).unwrap();
+        let lock = dlm.lock("multi_lock".to_string(), 10000);
+        assert!(lock.is_ok());
+        let lock = dlm.lock("multi_lock".to_string(), 10000);
+        assert!(lock.is_err());
     }
 }
