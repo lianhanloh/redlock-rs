@@ -1,3 +1,5 @@
+# borrowed from https://github.com/mitsuhiko/redis-rs/blob/master/upload-docs.sh
+
 # Make a new repo for the gh-pages branch
 rm -rf .gh-pages
 mkdir .gh-pages

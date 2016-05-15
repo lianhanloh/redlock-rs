@@ -2,8 +2,14 @@
 name = "redlock"
 version = "0.1.0"
 authors = ["Lianhan Loh <loh.lianhan@gmail.com>"]
+keywords = ["redis", "redlock", "distributed lock", "database"]
+description = "Redis distributed locks in Rust"
+homepage = "https://github.com/lianhanloh/redlock-rs"
+documentation = "https://lianhanloh.github.io/redlock-rs/"
+license = "The MIT License (MIT)"
+readme = "README.md"
 
 [dependencies]
-redis = "0.5.2"
+redis = "0.5.3"
 time = "0.1"
 rand = "0.3"
